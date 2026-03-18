@@ -362,13 +362,14 @@
       var h = Math.ceil(canvas.height / 2) * 2;
 
       // Verify the codec is supported before starting
-      var codecString = "avc1.42001f"; // H.264 Baseline Profile Level 3.1
+      var codecString = "avc1.4d0028"; // H.264 Main Profile Level 4.0 — good PowerPoint compat + quality
       var encoderConfig = {
         codec: codecString,
         width: w,
         height: h,
-        bitrate: 2_000_000,
+        bitrate: 5_000_000,
         framerate: FPS,
+        latencyMode: "quality",
       };
 
       var support = await VideoEncoder.isConfigSupported(encoderConfig);
@@ -405,25 +406,38 @@
       var capCtx = capCanvas.getContext("2d");
 
       var recording = true;
-      var frameIndex = 0;
+      var recordingStart = performance.now();
+      var lastCaptureMs = 0;
+      var frameCount = 0;
+      var minFrameGap = 1000 / FPS; // ~33.3 ms between captures
 
       function captureFrame() {
         if (!recording) return;
+
+        var elapsedMs = performance.now() - recordingStart;
+
+        // Throttle to target FPS so the file isn't 60fps-bloated
+        if (elapsedMs - lastCaptureMs < minFrameGap) {
+          requestAnimationFrame(captureFrame);
+          return;
+        }
+        lastCaptureMs = elapsedMs;
 
         // Draw white background + current HanziWriter frame
         capCtx.fillStyle = "#ffffff";
         capCtx.fillRect(0, 0, w, h);
         capCtx.drawImage(canvas, 0, 0, w, h);
 
-        var timestamp = frameIndex * frameDuration; // µs
+        // Wall-clock timestamp keeps video speed = real animation speed
+        var timestamp = Math.round(elapsedMs * 1000); // ms → µs
         var frame = new VideoFrame(capCanvas, {
           timestamp: timestamp,
           duration: frameDuration,
         });
-        encoder.encode(frame, { keyFrame: frameIndex % 60 === 0 });
+        encoder.encode(frame, { keyFrame: frameCount % 90 === 0 });
         frame.close();
 
-        frameIndex++;
+        frameCount++;
         requestAnimationFrame(captureFrame);
       }
 

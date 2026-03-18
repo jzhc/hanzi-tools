@@ -401,6 +401,7 @@
 
       var recording = true;
       var frameIndex = 0;
+      var frameDuration = Math.round(1_000_000 / FPS); // µs per frame
 
       function captureFrame() {
         if (!recording) return;
@@ -410,8 +411,11 @@
         capCtx.fillRect(0, 0, w, h);
         capCtx.drawImage(canvas, 0, 0, w, h);
 
-        var timestamp = frameIndex * (1_000_000 / FPS); // µs
-        var frame = new VideoFrame(capCanvas, { timestamp: timestamp });
+        var timestamp = frameIndex * frameDuration; // µs
+        var frame = new VideoFrame(capCanvas, {
+          timestamp: timestamp,
+          duration: frameDuration,
+        });
         encoder.encode(frame, { keyFrame: frameIndex % 60 === 0 });
         frame.close();
 

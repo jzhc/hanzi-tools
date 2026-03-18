@@ -355,6 +355,8 @@
       var ArrayBufferTarget = mod.ArrayBufferTarget;
 
       var FPS = 30;
+      var frameDuration = Math.round(1_000_000 / FPS); // µs per frame
+
       // H.264 requires even dimensions
       var w = Math.ceil(canvas.width / 2) * 2;
       var h = Math.ceil(canvas.height / 2) * 2;
@@ -383,9 +385,12 @@
       });
 
       // ── Encoder ──
+      // Explicitly pass timestamp + duration to addVideoChunk because
+      // some browsers (Firefox) leave EncodedVideoChunk.duration as null
+      // even when the source VideoFrame had duration set.
       var encoder = new VideoEncoder({
         output: function (chunk, meta) {
-          muxer.addVideoChunk(chunk, meta);
+          muxer.addVideoChunk(chunk, meta, chunk.timestamp, frameDuration);
         },
         error: function (e) {
           console.error("VideoEncoder error:", e);
@@ -401,7 +406,6 @@
 
       var recording = true;
       var frameIndex = 0;
-      var frameDuration = Math.round(1_000_000 / FPS); // µs per frame
 
       function captureFrame() {
         if (!recording) return;

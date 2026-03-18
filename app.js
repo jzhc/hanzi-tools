@@ -288,28 +288,47 @@
   }
 
   // ──────────────────────────────────────────────
-  // Video Export
+  // Video Export  (native MP4 via WebCodecs + mp4-muxer)
   // ──────────────────────────────────────────────
   /*
-   * Because we use `renderer: "canvas"`, HanziWriter draws directly to a
-   * <canvas> element.  We capture that canvas stream with MediaRecorder.
+   * Strategy
+   *   1. HanziWriter renders to a <canvas> (renderer:"canvas").
+   *   2. Each animation frame is captured as a VideoFrame, encoded to
+   *      H.264 via the browser's WebCodecs VideoEncoder API, then muxed
+   *      into an MP4 container by the lightweight `mp4-muxer` library.
+   *   3. The result is a standards-compliant H.264/MP4 file that plays
+   *      natively in PowerPoint, Windows Media Player, QuickTime, VLC,
+   *      and every major video player.
    *
-   * The recording is exported as .webm.
+   * mp4-muxer is loaded lazily from CDN the first time the user clicks
+   * "Export" so it adds zero overhead to the initial page load.
    *
-   * ── ffmpeg.wasm upgrade path (for future MP4 output) ──
-   *   import { FFmpeg } from "@ffmpeg/ffmpeg";
-   *   import { fetchFile } from "@ffmpeg/util";
-   *   const ffmpeg = new FFmpeg(); await ffmpeg.load();
-   *   ffmpeg.writeFile("in.webm", await fetchFile(webmBlob));
-   *   await ffmpeg.exec(["-i","in.webm","out.mp4"]);
-   *   const mp4 = await ffmpeg.readFile("out.mp4");
-   *
-   *   Requires Cross-Origin-Isolation headers (COOP/COEP) which GitHub
-   *   Pages does not provide by default.  A service-worker shim like
-   *   coi-serviceworker can work around this.
+   * Browser requirements:
+   *   - VideoEncoder (WebCodecs): Chrome 94+, Edge 94+, Safari 16.4+,
+   *     Firefox 130+.
+   *   - If the browser lacks WebCodecs the export button shows a clear
+   *     message instead of failing silently.
    */
 
-  function exportVideo() {
+  /** Cache the module so repeated exports don't re-fetch. */
+  var mp4MuxerModule = null;
+
+  async function loadMp4Muxer() {
+    if (mp4MuxerModule) return mp4MuxerModule;
+    mp4MuxerModule = await import(
+      "https://cdn.jsdelivr.net/npm/mp4-muxer/+esm"
+    );
+    return mp4MuxerModule;
+  }
+
+  function resetExportUI() {
+    state.isRecording = false;
+    dom.exportBtn.classList.remove("recording");
+    dom.exportBtn.textContent = "⬇ Export as MP4";
+    dom.exportBtn.disabled = false;
+  }
+
+  async function exportVideo() {
     if (!state.writer || state.isRecording) return;
 
     var canvas = dom.writerTarget.querySelector("canvas");
@@ -318,59 +337,134 @@
       return;
     }
 
-    if (
-      typeof canvas.captureStream !== "function" ||
-      typeof MediaRecorder === "undefined"
-    ) {
-      showToast("Your browser does not support canvas video recording.");
+    if (typeof VideoEncoder === "undefined") {
+      showToast(
+        "MP4 export requires a modern browser (Chrome 94+, Edge 94+, Safari 16.4+, or Firefox 130+)."
+      );
       return;
     }
 
     state.isRecording = true;
     dom.exportBtn.classList.add("recording");
-    dom.exportBtn.textContent = "● Recording…";
+    dom.exportBtn.textContent = "● Preparing…";
     dom.exportBtn.disabled = true;
 
-    var mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
-      ? "video/webm;codecs=vp9"
-      : "video/webm";
+    try {
+      var mod = await loadMp4Muxer();
+      var Muxer = mod.Muxer;
+      var ArrayBufferTarget = mod.ArrayBufferTarget;
 
-    var stream = canvas.captureStream(30);
-    var recorder = new MediaRecorder(stream, { mimeType: mimeType });
-    var chunks = [];
+      var FPS = 30;
+      // H.264 requires even dimensions
+      var w = Math.ceil(canvas.width / 2) * 2;
+      var h = Math.ceil(canvas.height / 2) * 2;
 
-    recorder.ondataavailable = function (e) {
-      if (e.data.size > 0) chunks.push(e.data);
-    };
+      // Verify the codec is supported before starting
+      var codecString = "avc1.42001f"; // H.264 Baseline Profile Level 3.1
+      var encoderConfig = {
+        codec: codecString,
+        width: w,
+        height: h,
+        bitrate: 2_000_000,
+        framerate: FPS,
+      };
 
-    recorder.onstop = function () {
-      var blob = new Blob(chunks, { type: mimeType });
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement("a");
-      a.href = url;
-      a.download = (state.activeChar || "character") + "_stroke_order.webm";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(function () { URL.revokeObjectURL(url); }, 5000);
+      var support = await VideoEncoder.isConfigSupported(encoderConfig);
+      if (!support.supported) {
+        throw new Error("H.264 encoding is not supported by this browser.");
+      }
 
-      state.isRecording = false;
-      dom.exportBtn.classList.remove("recording");
-      dom.exportBtn.textContent = "⬇ Export as Video";
-      dom.exportBtn.disabled = false;
-      showToast("Video downloaded!");
-    };
+      // ── Muxer ──
+      var muxer = new Muxer({
+        target: new ArrayBufferTarget(),
+        video: { codec: "avc", width: w, height: h },
+        fastStart: "in-memory",
+        firstTimestampBehavior: "offset",
+      });
 
-    recorder.start();
+      // ── Encoder ──
+      var encoder = new VideoEncoder({
+        output: function (chunk, meta) {
+          muxer.addVideoChunk(chunk, meta);
+        },
+        error: function (e) {
+          console.error("VideoEncoder error:", e);
+        },
+      });
+      encoder.configure(encoderConfig);
 
-    // Animate and stop recording when done
-    state.writer.animateCharacter({
-      onComplete: function () {
-        setTimeout(function () {
-          recorder.stop();
-        }, 600);
-      },
-    });
+      // ── Off-screen capture canvas (guarantees even dimensions) ──
+      var capCanvas = document.createElement("canvas");
+      capCanvas.width = w;
+      capCanvas.height = h;
+      var capCtx = capCanvas.getContext("2d");
+
+      var recording = true;
+      var frameIndex = 0;
+
+      function captureFrame() {
+        if (!recording) return;
+
+        // Draw white background + current HanziWriter frame
+        capCtx.fillStyle = "#ffffff";
+        capCtx.fillRect(0, 0, w, h);
+        capCtx.drawImage(canvas, 0, 0, w, h);
+
+        var timestamp = frameIndex * (1_000_000 / FPS); // µs
+        var frame = new VideoFrame(capCanvas, { timestamp: timestamp });
+        encoder.encode(frame, { keyFrame: frameIndex % 60 === 0 });
+        frame.close();
+
+        frameIndex++;
+        requestAnimationFrame(captureFrame);
+      }
+
+      dom.exportBtn.textContent = "● Recording…";
+
+      // Start the frame-capture loop, then kick off the animation
+      requestAnimationFrame(captureFrame);
+
+      state.writer.animateCharacter({
+        onComplete: function () {
+          // Brief pause so the finished character is captured for ~0.6 s
+          setTimeout(async function () {
+            recording = false;
+
+            try {
+              await encoder.flush();
+              encoder.close();
+              muxer.finalize();
+
+              var buf = muxer.target.buffer;
+              var blob = new Blob([buf], { type: "video/mp4" });
+              var url = URL.createObjectURL(blob);
+
+              var a = document.createElement("a");
+              a.href = url;
+              a.download =
+                (state.activeChar || "character") + "_stroke_order.mp4";
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              setTimeout(function () {
+                URL.revokeObjectURL(url);
+              }, 5000);
+
+              showToast("MP4 downloaded!");
+            } catch (err) {
+              console.error("Export finalization failed:", err);
+              showToast("Export failed — see console for details.");
+            }
+
+            resetExportUI();
+          }, 600);
+        },
+      });
+    } catch (err) {
+      console.error("Export failed:", err);
+      resetExportUI();
+      showToast("Export failed: " + err.message);
+    }
   }
 
   // ──────────────────────────────────────────────

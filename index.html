@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hanzi Tools — Chinese Character Utilities</title>
+  <meta name="description" content="Convert Chinese characters to Pinyin and visualize stroke order animations.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- ======== Header ======== -->
+  <header class="site-header">
+    <div class="container">
+      <h1 class="logo">漢 <span>Hanzi Tools</span></h1>
+      <p class="tagline">Pinyin conversion &amp; stroke order animation for Chinese characters</p>
+    </div>
+  </header>
+
+  <!-- ======== Main Content ======== -->
+  <main class="container">
+
+    <!-- Input Area -->
+    <section class="input-section">
+      <label for="hanzi-input" class="sr-only">Enter Chinese characters</label>
+      <textarea
+        id="hanzi-input"
+        placeholder="Type or paste Chinese characters here… e.g. 你好世界"
+        rows="3"
+        spellcheck="false"
+        autofocus
+      ></textarea>
+    </section>
+
+    <!-- Tools Grid -->
+    <div class="tools-grid">
+
+      <!-- ---- Pinyin Converter ---- -->
+      <section class="tool-card" id="pinyin-section">
+        <h2>拼音 Pinyin Converter</h2>
+        <div id="pinyin-output" class="output-box" aria-live="polite">
+          <span class="placeholder-text">Pinyin will appear here…</span>
+        </div>
+        <button id="copy-btn" class="btn btn-primary" disabled>
+          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+          </svg>
+          <span id="copy-btn-text">Copy to Clipboard</span>
+        </button>
+      </section>
+
+      <!-- ---- Stroke Order Animator ---- -->
+      <section class="tool-card" id="stroke-section">
+        <h2>筆順 Stroke Order Animator</h2>
+
+        <!-- Character Navigation -->
+        <div class="character-nav">
+          <button id="prev-char" class="btn btn-icon" disabled aria-label="Previous character">‹</button>
+          <span id="char-indicator" class="char-indicator">—</span>
+          <button id="next-char" class="btn btn-icon" disabled aria-label="Next character">›</button>
+        </div>
+
+        <!-- Writer Canvas Area -->
+        <div id="writer-wrapper" class="writer-wrapper">
+          <div id="hanzi-writer-target"></div>
+          <p id="writer-placeholder" class="placeholder-text center">Enter characters above to begin</p>
+        </div>
+
+        <!-- Controls -->
+        <div class="controls-grid">
+          <div class="control-group">
+            <label for="speed-slider">Animation Speed</label>
+            <div class="range-row">
+              <input type="range" id="speed-slider" min="0.5" max="5" step="0.5" value="1">
+              <output id="speed-value">1×</output>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <label for="size-slider">Character Size</label>
+            <div class="range-row">
+              <input type="range" id="size-slider" min="100" max="400" step="25" value="250">
+              <output id="size-value">250 px</output>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <label for="stroke-color">Stroke Color</label>
+            <input type="color" id="stroke-color" value="#333333">
+          </div>
+
+          <div class="control-group">
+            <label class="toggle-label" for="highlight-radical">
+              <span class="toggle-wrap">
+                <input type="checkbox" id="highlight-radical">
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              </span>
+              Highlight Radical
+            </label>
+          </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="action-row">
+          <button id="replay-btn" class="btn btn-secondary" disabled>▶ Replay Animation</button>
+          <button id="export-btn" class="btn btn-accent" disabled>⬇ Export as Video</button>
+        </div>
+      </section>
+
+    </div><!-- /.tools-grid -->
+  </main>
+
+  <!-- ======== Footer ======== -->
+  <footer class="site-footer">
+    <div class="container">
+      <p>
+        Built with
+        <a href="https://github.com/zh-lx/pinyin-pro" target="_blank" rel="noopener">pinyin-pro</a> &amp;
+        <a href="https://hanziwriter.org" target="_blank" rel="noopener">Hanzi Writer</a>
+      </p>
+    </div>
+  </footer>
+
+  <!-- ======== External Libraries (CDN) ======== -->
+  <script src="https://unpkg.com/pinyin-pro"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hanzi-writer@3.5/dist/hanzi-writer.min.js"></script>
+
+  <!-- ======== Application ======== -->
+  <script src="app.js"></script>
+
+</body>
+</html>

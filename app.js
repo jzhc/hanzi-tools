@@ -1,19 +1,44 @@
 /* ==============================================================
    Hanzi Tools — Application Logic
    Pinyin conversion, stroke-order animation, and video export.
+
+   Libraries expected as globals:
+     pinyinPro  — from https://cdn.jsdelivr.net/npm/pinyin-pro
+     HanziWriter — from https://cdn.jsdelivr.net/npm/hanzi-writer@3.5
    ============================================================== */
 
 (function () {
   "use strict";
 
   // ──────────────────────────────────────────────
+  // Library detection
+  // ──────────────────────────────────────────────
+  var pinyinReady =
+    typeof window.pinyinPro !== "undefined" &&
+    typeof window.pinyinPro.pinyin === "function";
+
+  var hanziWriterReady = typeof window.HanziWriter !== "undefined";
+
+  (function showLibWarnings() {
+    var msgs = [];
+    if (!pinyinReady) msgs.push("pinyin-pro did not load — Pinyin conversion unavailable.");
+    if (!hanziWriterReady) msgs.push("HanziWriter did not load — stroke animation unavailable.");
+    if (msgs.length === 0) return;
+
+    var el = document.getElementById("lib-status");
+    if (!el) return;
+    el.textContent = msgs.join(" ");
+    el.hidden = false;
+    console.warn("[Hanzi Tools]", msgs.join(" "));
+  })();
+
+  // ──────────────────────────────────────────────
   // State
   // ──────────────────────────────────────────────
-  const state = {
-    chars: [],          // CJK characters extracted from input
-    currentIndex: 0,    // which character is shown in the animator
-    writer: null,       // current HanziWriter instance
-    pinyinText: "",     // latest pinyin string
+  var state = {
+    activeChar: null,     // single character shown in the animator
+    writer: null,         // current HanziWriter instance
+    pinyinText: "",       // latest pinyin output
     animationSpeed: 1,
     writerSize: 250,
     strokeColor: "#333333",
@@ -25,22 +50,30 @@
   // ──────────────────────────────────────────────
   // DOM references
   // ──────────────────────────────────────────────
-  const dom = {
-    input: document.getElementById("hanzi-input"),
+  var dom = {
+    // Pinyin section
+    pinyinInput: document.getElementById("pinyin-input"),
+    pinyinConvertBtn: document.getElementById("pinyin-convert-btn"),
     pinyinOutput: document.getElementById("pinyin-output"),
     copyBtn: document.getElementById("copy-btn"),
     copyBtnText: document.getElementById("copy-btn-text"),
-    prevBtn: document.getElementById("prev-char"),
-    nextBtn: document.getElementById("next-char"),
-    charIndicator: document.getElementById("char-indicator"),
+
+    // Stroke section
+    strokeInput: document.getElementById("stroke-input"),
+    strokeShowBtn: document.getElementById("stroke-show-btn"),
+    strokeError: document.getElementById("stroke-error"),
     writerTarget: document.getElementById("hanzi-writer-target"),
     writerPlaceholder: document.getElementById("writer-placeholder"),
+
+    // Controls
     speedSlider: document.getElementById("speed-slider"),
     speedValue: document.getElementById("speed-value"),
     sizeSlider: document.getElementById("size-slider"),
     sizeValue: document.getElementById("size-value"),
     strokeColor: document.getElementById("stroke-color"),
     radicalToggle: document.getElementById("highlight-radical"),
+
+    // Actions
     replayBtn: document.getElementById("replay-btn"),
     exportBtn: document.getElementById("export-btn"),
   };
@@ -49,21 +82,12 @@
   // Utilities
   // ──────────────────────────────────────────────
 
-  /** Matches CJK Unified Ideographs (covers the vast majority of Hanzi). */
-  const CJK_RE = /[\u4e00-\u9fff\u3400-\u4dbf]/g;
+  /** Matches common CJK Unified Ideographs. */
+  var CJK_RE = /[\u4e00-\u9fff\u3400-\u4dbf]/;
+  var CJK_RE_G = /[\u4e00-\u9fff\u3400-\u4dbf]/g;
 
-  /** Simple debounce helper. */
-  function debounce(fn, ms) {
-    let timer;
-    return function (...args) {
-      clearTimeout(timer);
-      timer = setTimeout(() => fn.apply(this, args), ms);
-    };
-  }
-
-  /** Show a brief toast notification at the bottom of the viewport. */
   function showToast(message, durationMs) {
-    let toast = document.querySelector(".toast");
+    var toast = document.querySelector(".toast");
     if (!toast) {
       toast = document.createElement("div");
       toast.className = "toast";
@@ -71,15 +95,25 @@
     }
     toast.textContent = message;
     toast.classList.add("visible");
-    setTimeout(() => toast.classList.remove("visible"), durationMs || 2000);
+    setTimeout(function () {
+      toast.classList.remove("visible");
+    }, durationMs || 2000);
+  }
+
+  /** Extract the first CJK character from a string, or null. */
+  function firstCJK(str) {
+    var m = str.match(CJK_RE);
+    return m ? m[0] : null;
   }
 
   // ──────────────────────────────────────────────
   // Pinyin Conversion
   // ──────────────────────────────────────────────
 
-  function updatePinyin(text) {
-    if (!text.trim()) {
+  function convertPinyin() {
+    var text = dom.pinyinInput.value.trim();
+
+    if (!text) {
       state.pinyinText = "";
       dom.pinyinOutput.innerHTML =
         '<span class="placeholder-text">Pinyin will appear here…</span>';
@@ -87,207 +121,208 @@
       return;
     }
 
+    if (!pinyinReady) {
+      dom.pinyinOutput.innerHTML =
+        '<span class="placeholder-text">pinyin-pro library failed to load. Check console.</span>';
+      dom.copyBtn.disabled = true;
+      return;
+    }
+
     try {
-      /*
-       * pinyinPro.pinyin() defaults:
-       *   - toneType: "symbol" (diacritics)
-       *   - type: "string" (space-separated)
-       * This gives us lowercase + tonal marks + single space between syllables.
-       */
-      const result = window.pinyinPro.pinyin(text, {
+      // pinyinPro.pinyin() returns lowercase, tone-marked, space-separated
+      // syllables by default (toneType:"symbol", type:"string").
+      var result = window.pinyinPro.pinyin(text, {
         toneType: "symbol",
         nonZh: "consecutive",
       });
+
       state.pinyinText = result;
       dom.pinyinOutput.textContent = result;
       dom.copyBtn.disabled = false;
     } catch (err) {
       console.error("Pinyin conversion error:", err);
       dom.pinyinOutput.innerHTML =
-        '<span class="placeholder-text">Could not convert — is pinyin-pro loaded?</span>';
+        '<span class="placeholder-text">Conversion failed — see console for details.</span>';
       dom.copyBtn.disabled = true;
     }
-  }
-
-  // ──────────────────────────────────────────────
-  // HanziWriter Management
-  // ──────────────────────────────────────────────
-
-  /** Destroy the current writer and clear the container. */
-  function destroyWriter() {
-    if (state.writer) {
-      // HanziWriter does not expose a destroy method — clearing the
-      // container's innerHTML effectively removes the SVG and detaches events.
-      state.writer = null;
-    }
-    dom.writerTarget.innerHTML = "";
-  }
-
-  /** Create a fresh HanziWriter instance for the character at state.currentIndex. */
-  function createWriter() {
-    destroyWriter();
-
-    if (state.chars.length === 0) {
-      dom.writerPlaceholder.style.display = "";
-      toggleStrokeButtons(false);
-      return;
-    }
-
-    dom.writerPlaceholder.style.display = "none";
-
-    const char = state.chars[state.currentIndex];
-    try {
-      state.writer = HanziWriter.create(dom.writerTarget, char, {
-        width: state.writerSize,
-        height: state.writerSize,
-        padding: 12,
-        strokeAnimationSpeed: state.animationSpeed,
-        delayBetweenStrokes: 250,
-        strokeColor: state.strokeColor,
-        radicalColor: state.highlightRadical
-          ? state.radicalColor
-          : state.strokeColor,
-        outlineColor: "#ddd",
-        drawingColor: state.strokeColor,
-        showCharacter: true,
-        showOutline: true,
-      });
-    } catch (err) {
-      console.error("HanziWriter creation error:", err);
-      dom.writerPlaceholder.textContent =
-        "Unable to load character "" + char + """;
-      dom.writerPlaceholder.style.display = "";
-    }
-
-    toggleStrokeButtons(true);
-    updateCharIndicator();
-  }
-
-  /** Enable or disable stroke-section buttons. */
-  function toggleStrokeButtons(enabled) {
-    dom.replayBtn.disabled = !enabled;
-    dom.exportBtn.disabled = !enabled;
-    dom.prevBtn.disabled = !enabled || state.currentIndex <= 0;
-    dom.nextBtn.disabled =
-      !enabled || state.currentIndex >= state.chars.length - 1;
-  }
-
-  /** Update the "2 / 5" indicator between prev/next buttons. */
-  function updateCharIndicator() {
-    if (state.chars.length === 0) {
-      dom.charIndicator.textContent = "—";
-      return;
-    }
-    const char = state.chars[state.currentIndex];
-    dom.charIndicator.textContent =
-      char + "  " + (state.currentIndex + 1) + " / " + state.chars.length;
-  }
-
-  // ──────────────────────────────────────────────
-  // Input Handling
-  // ──────────────────────────────────────────────
-
-  function handleInputChange() {
-    const text = dom.input.value;
-
-    // Pinyin
-    updatePinyin(text);
-
-    // Extract CJK characters
-    const matches = text.match(CJK_RE);
-    const newChars = matches ? [...new Set(matches)] : [];
-
-    // Preserve current index when possible, else reset
-    const prevChar =
-      state.chars.length > 0 ? state.chars[state.currentIndex] : null;
-    state.chars = newChars;
-
-    if (prevChar && newChars.includes(prevChar)) {
-      state.currentIndex = newChars.indexOf(prevChar);
-    } else {
-      state.currentIndex = 0;
-    }
-
-    createWriter();
   }
 
   // ──────────────────────────────────────────────
   // Clipboard Copy
   // ──────────────────────────────────────────────
 
-  async function copyPinyin() {
+  function copyPinyin() {
     if (!state.pinyinText) return;
 
-    try {
-      await navigator.clipboard.writeText(state.pinyinText);
-    } catch {
-      // Fallback for older browsers / insecure contexts
-      const ta = document.createElement("textarea");
-      ta.value = state.pinyinText;
-      ta.style.position = "fixed";
-      ta.style.opacity = "0";
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand("copy");
-      document.body.removeChild(ta);
+    // Modern API with fallback
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(state.pinyinText).catch(function () {
+        fallbackCopy(state.pinyinText);
+      });
+    } else {
+      fallbackCopy(state.pinyinText);
     }
 
-    // Visual feedback
     dom.copyBtn.classList.add("copied");
     dom.copyBtnText.textContent = "Copied!";
-    setTimeout(() => {
+    setTimeout(function () {
       dom.copyBtn.classList.remove("copied");
       dom.copyBtnText.textContent = "Copy to Clipboard";
     }, 2000);
+  }
+
+  function fallbackCopy(text) {
+    var ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    document.body.removeChild(ta);
+  }
+
+  // ──────────────────────────────────────────────
+  // HanziWriter — Stroke Order
+  // ──────────────────────────────────────────────
+
+  function destroyWriter() {
+    if (state.writer) {
+      state.writer = null;
+    }
+    dom.writerTarget.innerHTML = "";
+  }
+
+  /**
+   * Validate input and show the stroke order for a single character.
+   * Triggered by the "Show Strokes" button or Enter key.
+   */
+  function showStrokeOrder() {
+    dom.strokeError.hidden = true;
+
+    if (!hanziWriterReady) {
+      dom.strokeError.textContent = "HanziWriter library failed to load.";
+      dom.strokeError.hidden = false;
+      return;
+    }
+
+    var raw = dom.strokeInput.value.trim();
+
+    if (!raw) {
+      dom.strokeError.textContent = "Please enter a Chinese character.";
+      dom.strokeError.hidden = false;
+      return;
+    }
+
+    var char = firstCJK(raw);
+
+    if (!char) {
+      dom.strokeError.textContent =
+        "No valid Chinese character found. Please enter a Mandarin character (e.g. 你).";
+      dom.strokeError.hidden = false;
+      return;
+    }
+
+    // Warn if more than one character was entered
+    var allCJK = raw.match(CJK_RE_G);
+    if (allCJK && allCJK.length > 1) {
+      dom.strokeError.textContent =
+        'Multiple characters detected — showing first character "' + char + '" only.';
+      dom.strokeError.hidden = false;
+    }
+
+    state.activeChar = char;
+    createWriter(char);
+  }
+
+  /**
+   * Create a HanziWriter instance for the given character using current
+   * control values.  Uses the 'canvas' renderer so the <canvas> element
+   * can be captured directly for video export.
+   *
+   * Ref: https://hanziwriter.org/docs.html
+   */
+  function createWriter(char) {
+    destroyWriter();
+    dom.writerPlaceholder.style.display = "none";
+
+    state.writer = HanziWriter.create(dom.writerTarget, char, {
+      width: state.writerSize,
+      height: state.writerSize,
+      padding: 12,
+      renderer: "canvas",
+      strokeAnimationSpeed: state.animationSpeed,
+      delayBetweenStrokes: 250,
+      strokeColor: state.strokeColor,
+      radicalColor: state.highlightRadical
+        ? state.radicalColor
+        : null,
+      outlineColor: "#ddd",
+      drawingColor: state.strokeColor,
+      showCharacter: true,
+      showOutline: true,
+      onLoadCharDataSuccess: function () {
+        toggleStrokeButtons(true);
+      },
+      onLoadCharDataError: function (reason) {
+        console.error("Failed to load character data:", reason);
+        dom.writerPlaceholder.textContent =
+          'Could not load data for "' + char + '". It may not be in the database.';
+        dom.writerPlaceholder.style.display = "";
+        toggleStrokeButtons(false);
+      },
+    });
+
+    toggleStrokeButtons(true);
+  }
+
+  /** Recreate writer with current controls (size / color / speed changed). */
+  function refreshWriter() {
+    if (!state.activeChar) return;
+    createWriter(state.activeChar);
+  }
+
+  function toggleStrokeButtons(enabled) {
+    dom.replayBtn.disabled = !enabled;
+    dom.exportBtn.disabled = !enabled;
   }
 
   // ──────────────────────────────────────────────
   // Video Export
   // ──────────────────────────────────────────────
   /*
-   * Strategy:
-   *   1. HanziWriter renders into SVG (its default renderer).
-   *   2. We serialise the live SVG each frame and draw it onto a hidden
-   *      <canvas> via an Image + Blob URL.
-   *   3. The canvas stream is captured with MediaRecorder → produces a .webm.
-   *   4. Ideally we'd transcode to MP4 with ffmpeg.wasm, but bootstrapping
-   *      ffmpeg.wasm from a CDN in a strictly static page adds significant
-   *      complexity (SharedArrayBuffer + COOP/COEP headers that GitHub Pages
-   *      does not set by default). We therefore export as .webm and note the
-   *      ffmpeg.wasm path in a comment below.
+   * Because we use `renderer: "canvas"`, HanziWriter draws directly to a
+   * <canvas> element.  We capture that canvas stream with MediaRecorder.
    *
-   * ── ffmpeg.wasm upgrade path (for future reference) ──
-   *   import { FFmpeg } from "@ffmpeg/ffmpeg";        // via CDN ESM
+   * The recording is exported as .webm.
+   *
+   * ── ffmpeg.wasm upgrade path (for future MP4 output) ──
+   *   import { FFmpeg } from "@ffmpeg/ffmpeg";
    *   import { fetchFile } from "@ffmpeg/util";
-   *   const ffmpeg = new FFmpeg();
-   *   await ffmpeg.load();
-   *   ffmpeg.writeFile("input.webm", await fetchFile(webmBlob));
-   *   await ffmpeg.exec(["-i", "input.webm", "output.mp4"]);
-   *   const mp4 = await ffmpeg.readFile("output.mp4");
-   *   // … trigger download of mp4 Blob …
+   *   const ffmpeg = new FFmpeg(); await ffmpeg.load();
+   *   ffmpeg.writeFile("in.webm", await fetchFile(webmBlob));
+   *   await ffmpeg.exec(["-i","in.webm","out.mp4"]);
+   *   const mp4 = await ffmpeg.readFile("out.mp4");
    *
-   *   Requirements:
-   *     - Page must be served with Cross-Origin-Isolation headers
-   *       (Cross-Origin-Opener-Policy: same-origin,
-   *        Cross-Origin-Embedder-Policy: require-corp)
-   *     - Or use a service-worker shim such as coi-serviceworker.
+   *   Requires Cross-Origin-Isolation headers (COOP/COEP) which GitHub
+   *   Pages does not provide by default.  A service-worker shim like
+   *   coi-serviceworker can work around this.
    */
 
-  async function exportVideo() {
+  function exportVideo() {
     if (!state.writer || state.isRecording) return;
 
-    const svgEl = dom.writerTarget.querySelector("svg");
-    if (!svgEl) {
-      showToast("No character to export.");
+    var canvas = dom.writerTarget.querySelector("canvas");
+    if (!canvas) {
+      showToast("No canvas found — show a character first.");
       return;
     }
 
-    // Guard: check browser support
     if (
-      typeof HTMLCanvasElement.prototype.captureStream !== "function" ||
+      typeof canvas.captureStream !== "function" ||
       typeof MediaRecorder === "undefined"
     ) {
-      showToast("Your browser does not support video recording.");
+      showToast("Your browser does not support canvas video recording.");
       return;
     }
 
@@ -296,36 +331,28 @@
     dom.exportBtn.textContent = "● Recording…";
     dom.exportBtn.disabled = true;
 
-    const size = state.writerSize;
-    const canvas = document.createElement("canvas");
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext("2d");
-
-    // Choose a supported MIME type
-    const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
+    var mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
       ? "video/webm;codecs=vp9"
       : "video/webm";
 
-    const stream = canvas.captureStream(30);
-    const recorder = new MediaRecorder(stream, { mimeType });
-    const chunks = [];
+    var stream = canvas.captureStream(30);
+    var recorder = new MediaRecorder(stream, { mimeType: mimeType });
+    var chunks = [];
 
-    recorder.ondataavailable = (e) => {
+    recorder.ondataavailable = function (e) {
       if (e.data.size > 0) chunks.push(e.data);
     };
 
-    recorder.onstop = () => {
-      const blob = new Blob(chunks, { type: mimeType });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
+    recorder.onstop = function () {
+      var blob = new Blob(chunks, { type: mimeType });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
       a.href = url;
-      a.download =
-        state.chars[state.currentIndex] + "_stroke_order.webm";
+      a.download = (state.activeChar || "character") + "_stroke_order.webm";
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 5000);
 
       state.isRecording = false;
       dom.exportBtn.classList.remove("recording");
@@ -334,53 +361,12 @@
       showToast("Video downloaded!");
     };
 
-    // ── Render loop: SVG → canvas each frame ──
-    let recording = true;
-
-    function renderFrame() {
-      if (!recording) return;
-
-      const svgClone = svgEl.cloneNode(true);
-      // Ensure the SVG carries explicit dimensions for the rasteriser
-      svgClone.setAttribute("width", size);
-      svgClone.setAttribute("height", size);
-
-      const data = new XMLSerializer().serializeToString(svgClone);
-      const blob = new Blob([data], {
-        type: "image/svg+xml;charset=utf-8",
-      });
-      const url = URL.createObjectURL(blob);
-      const img = new Image();
-
-      img.onload = () => {
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, size, size);
-        ctx.drawImage(img, 0, 0, size, size);
-        URL.revokeObjectURL(url);
-        if (recording) requestAnimationFrame(renderFrame);
-      };
-
-      img.onerror = () => {
-        URL.revokeObjectURL(url);
-        if (recording) requestAnimationFrame(renderFrame);
-      };
-
-      img.src = url;
-    }
-
-    // Paint one blank white frame so captureStream has data before animation starts
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, size, size);
-
     recorder.start();
-    requestAnimationFrame(renderFrame);
 
-    // Trigger the stroke animation
+    // Animate and stop recording when done
     state.writer.animateCharacter({
-      onComplete: () => {
-        // Short delay to capture the final still frame
-        setTimeout(() => {
-          recording = false;
+      onComplete: function () {
+        setTimeout(function () {
           recorder.stop();
         }, 600);
       },
@@ -392,62 +378,65 @@
   // ──────────────────────────────────────────────
 
   function init() {
-    // ── Input ──
-    dom.input.addEventListener("input", debounce(handleInputChange, 250));
+    // ── Pinyin: Convert button ──
+    dom.pinyinConvertBtn.addEventListener("click", convertPinyin);
+
+    // ── Pinyin: Enter key in textarea (without Shift) triggers convert ──
+    dom.pinyinInput.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        convertPinyin();
+      }
+    });
 
     // ── Copy ──
     dom.copyBtn.addEventListener("click", copyPinyin);
 
-    // ── Character navigation ──
-    dom.prevBtn.addEventListener("click", () => {
-      if (state.currentIndex > 0) {
-        state.currentIndex--;
-        createWriter();
-      }
-    });
+    // ── Stroke: Show button ──
+    dom.strokeShowBtn.addEventListener("click", showStrokeOrder);
 
-    dom.nextBtn.addEventListener("click", () => {
-      if (state.currentIndex < state.chars.length - 1) {
-        state.currentIndex++;
-        createWriter();
+    // ── Stroke: Enter key triggers show ──
+    dom.strokeInput.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        showStrokeOrder();
       }
     });
 
     // ── Speed slider ──
-    dom.speedSlider.addEventListener("input", () => {
+    dom.speedSlider.addEventListener("input", function () {
       state.animationSpeed = parseFloat(dom.speedSlider.value);
       dom.speedValue.textContent = state.animationSpeed + "×";
-      // Speed is baked into the HanziWriter constructor, so we recreate
-      createWriter();
+      refreshWriter();
     });
 
     // ── Size slider ──
-    dom.sizeSlider.addEventListener("input", () => {
+    dom.sizeSlider.addEventListener("input", function () {
       state.writerSize = parseInt(dom.sizeSlider.value, 10);
       dom.sizeValue.textContent = state.writerSize + " px";
-      createWriter();
+      refreshWriter();
     });
 
     // ── Stroke colour ──
-    dom.strokeColor.addEventListener("input", () => {
+    dom.strokeColor.addEventListener("input", function () {
       state.strokeColor = dom.strokeColor.value;
-      createWriter();
+      refreshWriter();
     });
 
-    // ── Highlight radical toggle ──
-    dom.radicalToggle.addEventListener("change", () => {
+    // ── Highlight radical ──
+    dom.radicalToggle.addEventListener("change", function () {
       state.highlightRadical = dom.radicalToggle.checked;
-      createWriter();
+      refreshWriter();
     });
 
-    // ── Replay animation ──
-    dom.replayBtn.addEventListener("click", () => {
+    // ── Replay ──
+    dom.replayBtn.addEventListener("click", function () {
       if (state.writer) {
         state.writer.animateCharacter();
       }
     });
 
-    // ── Export video ──
+    // ── Export ──
     dom.exportBtn.addEventListener("click", exportVideo);
   }
 

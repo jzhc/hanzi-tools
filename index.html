@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Hanzi Tools — Chinese Character Utilities</title>
-  <meta name="description" content="Convert Chinese characters to Pinyin and visualize stroke order animations.">
+  <title>Hanzi Tools — Mandarin Chinese Character Utilities</title>
+  <meta name="description" content="Convert Mandarin Chinese characters to Pinyin and visualize stroke order animations.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -15,37 +15,43 @@
   <!-- ======== Header ======== -->
   <header class="site-header">
     <div class="container">
-      <h1 class="logo">漢 <span>Hanzi Tools</span></h1>
-      <p class="tagline">Pinyin conversion &amp; stroke order animation for Chinese characters</p>
+      <h1 class="logo">Hanzi Tools</h1>
+      <p class="tagline">Pinyin conversion &amp; stroke order animation for Mandarin Chinese</p>
     </div>
   </header>
 
   <!-- ======== Main Content ======== -->
   <main class="container">
 
-    <!-- Input Area -->
-    <section class="input-section">
-      <label for="hanzi-input" class="sr-only">Enter Chinese characters</label>
-      <textarea
-        id="hanzi-input"
-        placeholder="Type or paste Chinese characters here… e.g. 你好世界"
-        rows="3"
-        spellcheck="false"
-        autofocus
-      ></textarea>
-    </section>
+    <!-- Library load status — hidden when both load OK, visible on error -->
+    <div id="lib-status" class="lib-status" hidden></div>
 
-    <!-- Tools Grid -->
+    <!-- Tools Grid: each card has its OWN input -->
     <div class="tools-grid">
 
-      <!-- ---- Pinyin Converter ---- -->
+      <!-- ──── Pinyin Converter (supports one or more characters) ──── -->
       <section class="tool-card" id="pinyin-section">
-        <h2>拼音 Pinyin Converter</h2>
+        <h2>Pinyin Converter</h2>
+        <p class="card-hint">Enter one or more Chinese characters to convert.</p>
+
+        <div class="input-row">
+          <label for="pinyin-input" class="sr-only">Chinese characters for Pinyin</label>
+          <textarea
+            id="pinyin-input"
+            placeholder="e.g. 你好世界"
+            rows="3"
+            spellcheck="false"
+          ></textarea>
+        </div>
+
+        <button id="pinyin-convert-btn" class="btn btn-primary">Convert to Pinyin</button>
+
         <div id="pinyin-output" class="output-box" aria-live="polite">
           <span class="placeholder-text">Pinyin will appear here…</span>
         </div>
-        <button id="copy-btn" class="btn btn-primary" disabled>
-          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+
+        <button id="copy-btn" class="btn btn-outline" disabled>
+          <svg class="btn-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
@@ -54,21 +60,29 @@
         </button>
       </section>
 
-      <!-- ---- Stroke Order Animator ---- -->
+      <!-- ──── Stroke Order Animator (single character only) ──── -->
       <section class="tool-card" id="stroke-section">
-        <h2>筆順 Stroke Order Animator</h2>
+        <h2>Stroke Order Animator</h2>
+        <p class="card-hint">Enter a single Chinese character to animate.</p>
 
-        <!-- Character Navigation -->
-        <div class="character-nav">
-          <button id="prev-char" class="btn btn-icon" disabled aria-label="Previous character">‹</button>
-          <span id="char-indicator" class="char-indicator">—</span>
-          <button id="next-char" class="btn btn-icon" disabled aria-label="Next character">›</button>
+        <div class="input-row input-row--inline">
+          <label for="stroke-input" class="sr-only">Single Chinese character</label>
+          <input
+            type="text"
+            id="stroke-input"
+            placeholder="e.g. 你"
+            spellcheck="false"
+            autocomplete="off"
+          >
+          <button id="stroke-show-btn" class="btn btn-primary">Show Strokes</button>
         </div>
 
-        <!-- Writer Canvas Area -->
+        <p id="stroke-error" class="field-error" hidden></p>
+
+        <!-- Writer display area -->
         <div id="writer-wrapper" class="writer-wrapper">
           <div id="hanzi-writer-target"></div>
-          <p id="writer-placeholder" class="placeholder-text center">Enter characters above to begin</p>
+          <p id="writer-placeholder" class="placeholder-text center">Enter a character above and press "Show Strokes"</p>
         </div>
 
         <!-- Controls -->
@@ -126,11 +140,17 @@
     </div>
   </footer>
 
-  <!-- ======== External Libraries (CDN) ======== -->
-  <script src="https://unpkg.com/pinyin-pro"></script>
+  <!--
+    External Libraries (CDN)
+    pinyin-pro : jsdelivr resolves to the IIFE browser build via the
+                 package's "jsdelivr" field → lib/pinyin-pro.iife.js
+                 which exposes the global `pinyinPro`.
+    hanzi-writer : official CDN from hanziwriter.org docs.
+  -->
+  <script src="https://cdn.jsdelivr.net/npm/pinyin-pro"></script>
   <script src="https://cdn.jsdelivr.net/npm/hanzi-writer@3.5/dist/hanzi-writer.min.js"></script>
 
-  <!-- ======== Application ======== -->
+  <!-- Application -->
   <script src="app.js"></script>
 
 </body>

@@ -15,7 +15,7 @@
   --color-accent: #2d3436;
   --color-accent-hover: #1e2526;
   --color-success: #27ae60;
-  --color-radical: #e74c3c;
+  --color-danger: #e74c3c;
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
@@ -59,7 +59,6 @@ a:hover {
   text-decoration: underline;
 }
 
-/* Screen-reader-only helper */
 .sr-only {
   position: absolute;
   width: 1px;
@@ -75,14 +74,14 @@ a:hover {
 /* ---- Layout ---- */
 .container {
   width: 100%;
-  max-width: 960px;
+  max-width: 1000px;
   margin: 0 auto;
   padding: 0 20px;
 }
 
 /* ---- Header ---- */
 .site-header {
-  padding: 32px 0 16px;
+  padding: 32px 0 20px;
   text-align: center;
 }
 
@@ -93,44 +92,22 @@ a:hover {
   color: var(--color-primary);
 }
 
-.logo span {
-  color: var(--color-text);
-}
-
 .tagline {
   margin-top: 4px;
   color: var(--color-text-secondary);
   font-size: 0.95rem;
 }
 
-/* ---- Input Section ---- */
-.input-section {
-  margin: 24px 0;
-}
-
-.input-section textarea {
-  width: 100%;
-  padding: 16px 20px;
-  font-family: var(--font-sans);
-  font-size: 1.15rem;
-  line-height: 1.6;
-  color: var(--color-text);
-  background: var(--color-surface);
-  border: 2px solid var(--color-border);
-  border-radius: var(--radius-md);
-  resize: vertical;
-  transition: border-color var(--transition), box-shadow var(--transition);
-  outline: none;
-}
-
-.input-section textarea::placeholder {
-  color: var(--color-text-secondary);
-  opacity: 0.7;
-}
-
-.input-section textarea:focus {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(192, 57, 43, 0.12);
+/* ---- Library status banner ---- */
+.lib-status {
+  background: #fef3cd;
+  color: #856404;
+  border: 1px solid #ffc107;
+  border-radius: var(--radius-sm);
+  padding: 10px 16px;
+  margin-bottom: 16px;
+  font-size: 0.9rem;
+  text-align: center;
 }
 
 /* ---- Tools Grid ---- */
@@ -138,6 +115,7 @@ a:hover {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 24px;
+  align-items: start;
   margin-bottom: 48px;
 }
 
@@ -156,7 +134,7 @@ a:hover {
   transition: box-shadow var(--transition);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
 
 .tool-card:hover {
@@ -170,12 +148,76 @@ a:hover {
   color: var(--color-text);
   border-bottom: 2px solid var(--color-bg);
   padding-bottom: 10px;
+  margin: 0;
+}
+
+.card-hint {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+/* ---- Inputs inside cards ---- */
+.input-row textarea,
+.input-row input[type="text"] {
+  width: 100%;
+  padding: 12px 16px;
+  font-family: var(--font-sans);
+  font-size: 1.1rem;
+  line-height: 1.6;
+  color: var(--color-text);
+  background: var(--color-bg);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  resize: vertical;
+  transition: border-color var(--transition), box-shadow var(--transition);
+  outline: none;
+}
+
+.input-row textarea::placeholder,
+.input-row input[type="text"]::placeholder {
+  color: var(--color-text-secondary);
+  opacity: 0.6;
+}
+
+.input-row textarea:focus,
+.input-row input[type="text"]:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(192, 57, 43, 0.12);
+}
+
+.input-row input[type="text"] {
+  resize: none;
+}
+
+/* Inline input + button for stroke section */
+.input-row--inline {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.input-row--inline input[type="text"] {
+  flex: 1;
+  min-width: 0;
+}
+
+.input-row--inline .btn {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ---- Field error message ---- */
+.field-error {
+  font-size: 0.85rem;
+  color: var(--color-danger);
+  margin: 0;
 }
 
 /* ---- Output Box (Pinyin) ---- */
 .output-box {
-  min-height: 80px;
-  padding: 16px;
+  min-height: 60px;
+  padding: 14px 16px;
   background: var(--color-bg);
   border-radius: var(--radius-sm);
   font-size: 1.1rem;
@@ -188,7 +230,7 @@ a:hover {
   color: var(--color-text-secondary);
   opacity: 0.6;
   font-style: italic;
-  font-size: 0.95rem;
+  font-size: 0.92rem;
 }
 
 .placeholder-text.center {
@@ -227,30 +269,7 @@ a:hover {
   box-shadow: 0 0 0 3px rgba(192, 57, 43, 0.25);
 }
 
-.btn-icon {
-  width: 36px;
-  height: 36px;
-  padding: 0;
-  font-size: 1.3rem;
-  line-height: 1;
-  border-radius: 50%;
-  background: var(--color-bg);
-  color: var(--color-text);
-  border: 1px solid var(--color-border);
-}
-
-.btn-icon:hover:not(:disabled) {
-  background: var(--color-border);
-}
-
-.btn .btn-icon-svg {
-  width: 18px;
-  height: 18px;
-  flex-shrink: 0;
-}
-
 .btn-primary {
-  width: 100%;
   background: var(--color-primary);
   color: #fff;
 }
@@ -259,8 +278,26 @@ a:hover {
   background: var(--color-primary-hover);
 }
 
-.btn-primary.copied {
+/* Full-width primary used below the pinyin textarea */
+#pinyin-convert-btn {
+  width: 100%;
+}
+
+.btn-outline {
+  width: 100%;
+  background: transparent;
+  color: var(--color-primary);
+  border: 2px solid var(--color-primary);
+}
+
+.btn-outline:hover:not(:disabled) {
+  background: rgba(192, 57, 43, 0.06);
+}
+
+.btn-outline.copied {
   background: var(--color-success);
+  border-color: var(--color-success);
+  color: #fff;
 }
 
 .btn-secondary {
@@ -283,34 +320,19 @@ a:hover {
 }
 
 .btn-accent.recording {
-  background: var(--color-radical);
+  background: var(--color-danger);
   animation: pulse 1s infinite;
 }
 
 @keyframes pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.7;
-  }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
 }
 
-/* ---- Character Navigation ---- */
-.character-nav {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-}
-
-.char-indicator {
-  font-size: 0.9rem;
-  font-weight: 500;
-  color: var(--color-text-secondary);
-  min-width: 50px;
-  text-align: center;
+.btn-svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
 }
 
 /* ---- Writer Wrapper ---- */
@@ -350,7 +372,7 @@ a:hover {
   gap: 6px;
 }
 
-.control-group label {
+.control-group > label {
   font-size: 0.82rem;
   font-weight: 500;
   color: var(--color-text-secondary);
@@ -476,7 +498,7 @@ input[type="color"]::-webkit-color-swatch {
   border-top: 1px solid var(--color-border);
 }
 
-/* ---- Toast / status messages ---- */
+/* ---- Toast ---- */
 .toast {
   position: fixed;
   bottom: 24px;

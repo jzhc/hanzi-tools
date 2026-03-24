@@ -114,7 +114,13 @@
         <!-- Actions -->
         <div class="action-row">
           <button id="replay-btn" class="btn btn-secondary" disabled>▶ Replay Animation</button>
-          <button id="export-btn" class="btn btn-accent" disabled>⬇ Export as MP4</button>
+          <div class="export-group">
+            <button id="export-btn" class="btn btn-accent" disabled>⬇ Export Video</button>
+            <select id="export-format" class="format-select">
+              <option value="mp4">MP4 — PowerPoint / universal</option>
+              <option value="webm">WebM — Windows fallback</option>
+            </select>
+          </div>
         </div>
       </section>
 

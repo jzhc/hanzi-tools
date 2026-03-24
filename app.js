@@ -74,6 +74,7 @@
     // Actions
     replayBtn: document.getElementById("replay-btn"),
     exportBtn: document.getElementById("export-btn"),
+    exportFormat: document.getElementById("export-format"),
   };
 
   // ──────────────────────────────────────────────
@@ -319,8 +320,9 @@
   function resetExportUI() {
     state.isRecording = false;
     dom.exportBtn.classList.remove("recording");
-    dom.exportBtn.textContent = "⬇ Export as MP4";
+    dom.exportBtn.textContent = "⬇ Export Video";
     dom.exportBtn.disabled = false;
+    dom.exportFormat.disabled = false;
   }
 
   async function exportVideo() {
@@ -339,10 +341,14 @@
       return;
     }
 
+    var fmt = dom.exportFormat.value; // "mp4" or "webm"
+    var isMp4 = fmt === "mp4";
+
     state.isRecording = true;
     dom.exportBtn.classList.add("recording");
     dom.exportBtn.textContent = "● Preparing…";
     dom.exportBtn.disabled = true;
+    dom.exportFormat.disabled = true;
 
     try {
       var mb = await loadMediabunny();
@@ -363,13 +369,13 @@
 
       // ── Mediabunny output ──
       var target = new mb.BufferTarget();
-      var output = new mb.Output({
-        format: new mb.Mp4OutputFormat({ fastStart: "in-memory" }),
-        target: target,
-      });
+      var format = isMp4
+        ? new mb.Mp4OutputFormat({ fastStart: "in-memory" })
+        : new mb.WebMOutputFormat();
+      var output = new mb.Output({ format: format, target: target });
 
       var videoSource = new mb.CanvasSource(capCanvas, {
-        codec: "avc",
+        codec: isMp4 ? "avc" : "vp8",
         bitrate: 4_000_000,
       });
       output.addVideoTrack(videoSource, { frameRate: FPS });
@@ -400,6 +406,9 @@
         requestAnimationFrame(captureFrame);
       }
 
+      var ext = isMp4 ? "mp4" : "webm";
+      var mime = isMp4 ? "video/mp4" : "video/webm";
+
       dom.exportBtn.textContent = "● Recording…";
       requestAnimationFrame(captureFrame);
 
@@ -413,13 +422,13 @@
               await output.finalize();
 
               var buf = target.buffer;
-              var blob = new Blob([buf], { type: "video/mp4" });
+              var blob = new Blob([buf], { type: mime });
               var url = URL.createObjectURL(blob);
 
               var a = document.createElement("a");
               a.href = url;
               a.download =
-                (state.activeChar || "character") + "_stroke_order.mp4";
+                (state.activeChar || "character") + "_stroke_order." + ext;
               document.body.appendChild(a);
               a.click();
               document.body.removeChild(a);
@@ -427,7 +436,7 @@
                 URL.revokeObjectURL(url);
               }, 5000);
 
-              showToast("MP4 downloaded!");
+              showToast(ext.toUpperCase() + " downloaded!");
             } catch (err) {
               console.error("Export finalization failed:", err);
               showToast("Export failed — see console for details.");

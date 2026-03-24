@@ -488,6 +488,27 @@ input[type="color"]::-webkit-color-swatch {
   flex: 1;
 }
 
+.export-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+}
+
+.export-group .btn {
+  width: 100%;
+}
+
+.format-select {
+  font-size: 0.8rem;
+  padding: 4px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-bg);
+  color: var(--color-text-light);
+  cursor: pointer;
+}
+
 /* ---- Footer ---- */
 .site-footer {
   margin-top: auto;

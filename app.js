@@ -40,7 +40,7 @@
     writer: null,         // current HanziWriter instance
     pinyinText: "",       // latest pinyin output
     animationSpeed: 1,
-    writerSize: 250,
+    writerSize: 400,
     strokeColor: "#333333",
     highlightRadical: false,
     radicalColor: "#e74c3c",
@@ -68,8 +68,6 @@
     // Controls
     speedSlider: document.getElementById("speed-slider"),
     speedValue: document.getElementById("speed-value"),
-    sizeSlider: document.getElementById("size-slider"),
-    sizeValue: document.getElementById("size-value"),
     strokeColor: document.getElementById("stroke-color"),
     radicalToggle: document.getElementById("highlight-radical"),
 
@@ -288,37 +286,34 @@
   }
 
   // ──────────────────────────────────────────────
-  // Video Export  (native MP4 via WebCodecs + mp4-muxer)
+  // Video Export  (Mediabunny — standard MP4 via WebCodecs)
   // ──────────────────────────────────────────────
   /*
    * Strategy
    *   1. HanziWriter renders to a <canvas> (renderer:"canvas").
-   *   2. Each animation frame is captured as a VideoFrame, encoded to
-   *      H.264 via the browser's WebCodecs VideoEncoder API, then muxed
-   *      into an MP4 container by the lightweight `mp4-muxer` library.
-   *   3. The result is an H.264 Baseline Profile MP4 that plays natively
-   *      in PowerPoint, Windows Media Player, QuickTime, VLC, and every
-   *      major video player — including older Windows builds.
+   *   2. An off-screen capture canvas is drawn with a white background
+   *      and the current HanziWriter frame, scaled up to ≥640 px.
+   *   3. Mediabunny's CanvasSource captures each frame, encodes it to
+   *      H.264 via WebCodecs, and muxes it into a standard MP4 file
+   *      identical in structure to YouTube downloads — plays natively
+   *      in PowerPoint, Windows Media Player, QuickTime, and VLC.
    *
-   * mp4-muxer is loaded lazily from CDN the first time the user clicks
-   * "Export" so it adds zero overhead to the initial page load.
+   * Mediabunny is the maintained successor to mp4-muxer and produces
+   * properly structured MP4 containers with correct SPS/PPS handling.
+   * It is loaded lazily from CDN on first export click.
    *
    * Browser requirements:
-   *   - VideoEncoder (WebCodecs): Chrome 94+, Edge 94+, Safari 16.4+,
-   *     Firefox 130+.
-   *   - If the browser lacks WebCodecs the export button shows a clear
-   *     message instead of failing silently.
+   *   - WebCodecs: Chrome 94+, Edge 94+, Safari 16.4+, Firefox 130+.
    */
 
-  /** Cache the module so repeated exports don't re-fetch. */
-  var mp4MuxerModule = null;
+  var mediabunnyModule = null;
 
-  async function loadMp4Muxer() {
-    if (mp4MuxerModule) return mp4MuxerModule;
-    mp4MuxerModule = await import(
-      "https://cdn.jsdelivr.net/npm/mp4-muxer/+esm"
+  async function loadMediabunny() {
+    if (mediabunnyModule) return mediabunnyModule;
+    mediabunnyModule = await import(
+      "https://cdn.jsdelivr.net/npm/mediabunny/+esm"
     );
-    return mp4MuxerModule;
+    return mediabunnyModule;
   }
 
   function resetExportUI() {
@@ -350,62 +345,36 @@
     dom.exportBtn.disabled = true;
 
     try {
-      var mod = await loadMp4Muxer();
-      var Muxer = mod.Muxer;
-      var ArrayBufferTarget = mod.ArrayBufferTarget;
+      var mb = await loadMediabunny();
 
       var FPS = 60;
-      var frameDuration = Math.round(1_000_000 / FPS); // µs per frame
+      var frameDuration = 1 / FPS; // seconds
 
-      // Upscale small canvases to ≥640 px and align to 16 (H.264 macroblock size).
-      // Resolutions below ~640 px and non-16-aligned sizes trigger encoder
-      // descriptor bugs in Chrome that produce files Windows can't decode.
+      // Upscale small canvases to ≥640 px, aligned to 16 (macroblock size)
       var exportSize = Math.max(canvas.width, 640);
       var w = Math.ceil(exportSize / 16) * 16;
       var h = w;
 
-      // Baseline Profile Level 3.1 — most compatible with WMP, PowerPoint, QuickTime
-      var codecString = "avc1.42001f";
-      var encoderConfig = {
-        codec: codecString,
-        width: w,
-        height: h,
-        bitrate: 4_000_000,
-        framerate: FPS,
-      };
-
-      var support = await VideoEncoder.isConfigSupported(encoderConfig);
-      if (!support.supported) {
-        throw new Error("H.264 encoding is not supported by this browser.");
-      }
-
-      // ── Muxer ──
-      var muxer = new Muxer({
-        target: new ArrayBufferTarget(),
-        video: { codec: "avc", width: w, height: h },
-        fastStart: "in-memory",
-        firstTimestampBehavior: "offset",
-      });
-
-      // ── Encoder ──
-      // Explicitly pass timestamp + duration to addVideoChunk because
-      // some browsers (Firefox) leave EncodedVideoChunk.duration as null
-      // even when the source VideoFrame had duration set.
-      var encoder = new VideoEncoder({
-        output: function (chunk, meta) {
-          muxer.addVideoChunk(chunk, meta, chunk.timestamp, frameDuration);
-        },
-        error: function (e) {
-          console.error("VideoEncoder error:", e);
-        },
-      });
-      encoder.configure(encoderConfig);
-
-      // ── Off-screen capture canvas (guarantees even dimensions) ──
+      // Off-screen capture canvas (upscaled, white background)
       var capCanvas = document.createElement("canvas");
       capCanvas.width = w;
       capCanvas.height = h;
       var capCtx = capCanvas.getContext("2d");
+
+      // ── Mediabunny output ──
+      var target = new mb.BufferTarget();
+      var output = new mb.Output({
+        format: new mb.Mp4OutputFormat({ fastStart: "in-memory" }),
+        target: target,
+      });
+
+      var videoSource = new mb.CanvasSource(capCanvas, {
+        codec: "avc",
+        bitrate: 4_000_000,
+      });
+      output.addVideoTrack(videoSource, { frameRate: FPS });
+
+      await output.start();
 
       var recording = true;
       var lastCaptureTime = 0;
@@ -425,36 +394,25 @@
         capCtx.fillRect(0, 0, w, h);
         capCtx.drawImage(canvas, 0, 0, w, h);
 
-        // Fixed-increment timestamps produce a constant-framerate file
-        var timestamp = frameCount * frameDuration;
-        var frame = new VideoFrame(capCanvas, {
-          timestamp: timestamp,
-          duration: frameDuration,
-        });
-        encoder.encode(frame, { keyFrame: frameCount === 0 });
-        frame.close();
-
+        videoSource.add(frameCount * frameDuration, frameDuration);
         frameCount++;
+
         requestAnimationFrame(captureFrame);
       }
 
       dom.exportBtn.textContent = "● Recording…";
-
-      // Start the frame-capture loop, then kick off the animation
       requestAnimationFrame(captureFrame);
 
       state.writer.animateCharacter({
         onComplete: function () {
-          // Brief pause so the finished character is captured for ~0.6 s
           setTimeout(async function () {
             recording = false;
 
             try {
-              await encoder.flush();
-              encoder.close();
-              muxer.finalize();
+              videoSource.close();
+              await output.finalize();
 
-              var buf = muxer.target.buffer;
+              var buf = target.buffer;
               var blob = new Blob([buf], { type: "video/mp4" });
               var url = URL.createObjectURL(blob);
 
@@ -520,13 +478,6 @@
     dom.speedSlider.addEventListener("input", function () {
       state.animationSpeed = parseFloat(dom.speedSlider.value);
       dom.speedValue.textContent = state.animationSpeed + "×";
-      refreshWriter();
-    });
-
-    // ── Size slider ──
-    dom.sizeSlider.addEventListener("input", function () {
-      state.writerSize = parseInt(dom.sizeSlider.value, 10);
-      dom.sizeValue.textContent = state.writerSize + " px";
       refreshWriter();
     });
 

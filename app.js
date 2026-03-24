@@ -357,19 +357,21 @@
       var FPS = 60;
       var frameDuration = Math.round(1_000_000 / FPS); // µs per frame
 
-      // H.264 requires even dimensions
-      var w = Math.ceil(canvas.width / 2) * 2;
-      var h = Math.ceil(canvas.height / 2) * 2;
+      // Upscale small canvases to ≥640 px and align to 16 (H.264 macroblock size).
+      // Resolutions below ~640 px and non-16-aligned sizes trigger encoder
+      // descriptor bugs in Chrome that produce files Windows can't decode.
+      var exportSize = Math.max(canvas.width, 640);
+      var w = Math.ceil(exportSize / 16) * 16;
+      var h = w;
 
-      // Baseline Profile Level 3.0 — widest Windows / PowerPoint / QuickTime compatibility
-      var codecString = "avc1.42001e";
+      // Baseline Profile Level 3.1 — most compatible with WMP, PowerPoint, QuickTime
+      var codecString = "avc1.42001f";
       var encoderConfig = {
         codec: codecString,
         width: w,
         height: h,
         bitrate: 4_000_000,
         framerate: FPS,
-        hardwareAcceleration: "prefer-software",
       };
 
       var support = await VideoEncoder.isConfigSupported(encoderConfig);
@@ -429,7 +431,7 @@
           timestamp: timestamp,
           duration: frameDuration,
         });
-        encoder.encode(frame, { keyFrame: frameCount % 120 === 0 });
+        encoder.encode(frame, { keyFrame: frameCount === 0 });
         frame.close();
 
         frameCount++;

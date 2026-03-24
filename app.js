@@ -296,9 +296,9 @@
    *   2. Each animation frame is captured as a VideoFrame, encoded to
    *      H.264 via the browser's WebCodecs VideoEncoder API, then muxed
    *      into an MP4 container by the lightweight `mp4-muxer` library.
-   *   3. The result is a standards-compliant H.264/MP4 file that plays
-   *      natively in PowerPoint, Windows Media Player, QuickTime, VLC,
-   *      and every major video player.
+   *   3. The result is an H.264 Baseline Profile MP4 that plays natively
+   *      in PowerPoint, Windows Media Player, QuickTime, VLC, and every
+   *      major video player — including older Windows builds.
    *
    * mp4-muxer is loaded lazily from CDN the first time the user clicks
    * "Export" so it adds zero overhead to the initial page load.
@@ -354,22 +354,22 @@
       var Muxer = mod.Muxer;
       var ArrayBufferTarget = mod.ArrayBufferTarget;
 
-      var FPS = 30;
+      var FPS = 60;
       var frameDuration = Math.round(1_000_000 / FPS); // µs per frame
 
       // H.264 requires even dimensions
       var w = Math.ceil(canvas.width / 2) * 2;
       var h = Math.ceil(canvas.height / 2) * 2;
 
-      // Verify the codec is supported before starting
-      var codecString = "avc1.4d0028"; // H.264 Main Profile Level 4.0 — good PowerPoint compat + quality
+      // Baseline Profile Level 3.0 — widest Windows / PowerPoint / QuickTime compatibility
+      var codecString = "avc1.42001e";
       var encoderConfig = {
         codec: codecString,
         width: w,
         height: h,
-        bitrate: 5_000_000,
+        bitrate: 4_000_000,
         framerate: FPS,
-        latencyMode: "quality",
+        hardwareAcceleration: "prefer-software",
       };
 
       var support = await VideoEncoder.isConfigSupported(encoderConfig);
@@ -406,35 +406,30 @@
       var capCtx = capCanvas.getContext("2d");
 
       var recording = true;
-      var recordingStart = performance.now();
-      var lastCaptureMs = 0;
+      var lastCaptureTime = 0;
       var frameCount = 0;
-      var minFrameGap = 1000 / FPS; // ~33.3 ms between captures
+      var minFrameGap = 1000 / FPS;
 
-      function captureFrame() {
+      function captureFrame(now) {
         if (!recording) return;
 
-        var elapsedMs = performance.now() - recordingStart;
-
-        // Throttle to target FPS so the file isn't 60fps-bloated
-        if (elapsedMs - lastCaptureMs < minFrameGap) {
+        if (now - lastCaptureTime < minFrameGap * 0.85) {
           requestAnimationFrame(captureFrame);
           return;
         }
-        lastCaptureMs = elapsedMs;
+        lastCaptureTime = now;
 
-        // Draw white background + current HanziWriter frame
         capCtx.fillStyle = "#ffffff";
         capCtx.fillRect(0, 0, w, h);
         capCtx.drawImage(canvas, 0, 0, w, h);
 
-        // Wall-clock timestamp keeps video speed = real animation speed
-        var timestamp = Math.round(elapsedMs * 1000); // ms → µs
+        // Fixed-increment timestamps produce a constant-framerate file
+        var timestamp = frameCount * frameDuration;
         var frame = new VideoFrame(capCanvas, {
           timestamp: timestamp,
           duration: frameDuration,
         });
-        encoder.encode(frame, { keyFrame: frameCount % 90 === 0 });
+        encoder.encode(frame, { keyFrame: frameCount % 120 === 0 });
         frame.close();
 
         frameCount++;

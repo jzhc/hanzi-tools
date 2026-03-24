@@ -336,9 +336,17 @@
 
     if (typeof VideoEncoder === "undefined") {
       showToast(
-        "MP4 export requires a modern browser (Chrome 94+, Edge 94+, Safari 16.4+, or Firefox 130+)."
+        "Video export requires a modern browser (Chrome 94+, Edge 94+, Safari 16.4+, or Firefox 130+)."
       );
       return;
+    }
+
+    var isFirefox = navigator.userAgent.indexOf("Firefox") !== -1;
+    if (isFirefox) {
+      showToast(
+        "Firefox video exports may not play on Windows. Use Chrome or Edge for best compatibility.",
+        4000
+      );
     }
 
     var fmt = dom.exportFormat.value; // "mp4" or "webm"
@@ -380,6 +388,14 @@
       });
       output.addVideoTrack(videoSource, { frameRate: FPS });
 
+      // Silent audio track — Windows PowerPoint requires an audio stream
+      var SAMPLE_RATE = 48000;
+      var audioSource = new mb.AudioBufferSource({
+        codec: isMp4 ? "aac" : "opus",
+        bitrate: 128_000,
+      });
+      output.addAudioTrack(audioSource);
+
       await output.start();
 
       var recording = true;
@@ -419,6 +435,18 @@
 
             try {
               videoSource.close();
+
+              // Fill the silent audio track to match video duration
+              var totalDuration = frameCount * frameDuration;
+              var totalSamples = Math.max(1, Math.ceil(SAMPLE_RATE * totalDuration));
+              var silentBuffer = new AudioBuffer({
+                length: totalSamples,
+                sampleRate: SAMPLE_RATE,
+                numberOfChannels: 1,
+              });
+              audioSource.add(silentBuffer, 0);
+              audioSource.close();
+
               await output.finalize();
 
               var buf = target.buffer;
